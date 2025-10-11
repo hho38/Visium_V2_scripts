@@ -1,3 +1,3 @@
 # Visium_V2_scripts
 
-Useful Scripts for when spatial transcriptomics analysis with Visium V2 data 
+Useful Scripts for when conducting spatial transcriptomics analysis with Visium V2 data 
