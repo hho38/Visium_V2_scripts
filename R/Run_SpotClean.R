@@ -1,4 +1,80 @@
 #' Running SpotClean on Multiple Samples 
+#' Original Paper : https://www.nature.com/articles/s41467-022-30587-y
+
+#' Load Visium data, run SpotClean, optionally visualize, and return a Seurat object
+#'
+#' @description
+#' Convenience wrapper that
+#' 1) validates a Space Ranger output directory,
+#' 2) loads the raw counts and spatial metadata,
+#' 3) builds a slide object,
+#' 4) runs decontamination with `spotclean`,
+#' 5) optionally visualizes the estimated contamination rate as a heatmap,
+#' 6) converts the result to a Seurat object,
+#' 7) returns all key objects in a single list.
+#'
+#' @param data_dir Character. Path to a Space Ranger run directory that contains
+#'   `raw_feature_bc_matrix.h5` and a `Spatial` subfolder with
+#'   `tissue_positions.csv`, `tissue_lowres_image.png`, and `scalefactors_json.json`.
+#'   Default is `"./spaceranger_data"`.
+#'
+#' @param visualize Logical. If `TRUE`, draw a heatmap of `contamination_rate`
+#'   stored in `decont_obj@metadata`. Default is `TRUE`.
+#'
+#' @param legend_title Character. Title for the heatmap legend. Default is `"contamination rate"`.
+#'
+#' @param legend_range Numeric length two. Limits for the heatmap legend range.
+#'   Default is `c(0, 1)`.
+#'
+#' @param spotclean_args List. Named arguments forwarded to `spotclean` via `do.call`.
+#'   Use this to tune the decontamination step.
+#'
+#' @param seurat_args List. Named arguments forwarded to `convertToSeurat` via `do.call`.
+#'   Use this to control Seurat conversion and image attachment.
+#'
+#' @details
+#' The function checks that the following functions exist in the current session:
+#' `read10xRawH5`, `read10xSlide`, `createSlide`, `spotclean`, `visualizeHeatmap`,
+#' and `convertToSeurat`. Load the packages that provide these before calling.
+#'
+#' Required files are resolved from `data_dir`:
+#' - `raw_feature_bc_matrix.h5`
+#' - `Spatial/tissue_positions.csv`
+#' - `Spatial/tissue_lowres_image.png`
+#' - `Spatial/scalefactors_json.json`
+#'
+#' @return
+#' A list with three elements:
+#' - `slide_obj`: the slide object created from raw counts and spatial metadata
+#' - `decont_obj`: the decontaminated slide object returned by `spotclean`
+#' - `seurat`: a Seurat object created by `convertToSeurat`
+#'
+#' @examples
+#' \dontrun{
+#' # Minimal run with defaults
+#' out <- load_and_SpotClean(data_dir = "path/to/spaceranger")
+#'
+#' # Customize SpotClean and Seurat steps
+#' out <- load_and_SpotClean(
+#'   data_dir = "path/to/spaceranger",
+#'   visualize = TRUE,
+#'   legend_title = "estimated contamination",
+#'   legend_range = c(0, 0.5),
+#'   spotclean_args = list(max_iters = 200, seed = 123),
+#'   seurat_args = list(project = "Sample1", assay = "Spatial")
+#' )
+#'
+#' # Access returned objects
+#' out$seurat
+#' out$decont_obj@metadata$contamination_rate
+#' }
+#'
+#' @seealso
+#' `spotclean`, `visualizeHeatmap`, `convertToSeurat`
+#'
+#' @export
+#' @importFrom spotclean read10xRawH5 read10xSlide createSlide spotclean visualizeHeatmap convertToSeurat
+#' @import Seurat
 
 
 load_and_SpotClean <- function(
