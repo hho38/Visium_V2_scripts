@@ -6,21 +6,23 @@ library(Matrix)
 #'
 #' @param sobj                 Seurat object for the spatial sample
 #' @param sc_ref               Seurat object for the single cell reference
-#' @param assay                Assay name used in the spatial Seurat object
-#' @param slot                 Slot name used in the spatial assay (for example "counts")
+#' @param assay                Assay name used in the spatial Seurat object (Spatial, SCT, Ect)
+#' @param slot                 Slot name used in the spatial assay (for example "counts" or "data")
 #' @param sc_ref_celltype_col  Column in sc_ref meta.data containing cell type labels
 #' @param sc_ref_slot          Slot name used in the reference assay (for example "counts")
 #' @param cores                Maximum number of cores for spacexr::create.RCTD
+#' @param min_cells_per_type   Minimum number of cells per celltype in reference. If lower, celltype won't be used. 
 #'
 #' @return Seurat object sobj with a new assay "rctd_full" and per cell type weights in meta.data
 runRCTD_1_sample <- function(
-  sobj,
-  sc_ref,
-  assay               = "SCT",
-  slot                = "counts",
-  sc_ref_celltype_col = "Celltype_Mal_sub",
-  sc_ref_slot         = "counts",
-  cores               = 2
+    sobj,
+    sc_ref,
+    assay               = "SCT",
+    slot                = "counts",
+    sc_ref_celltype_col = "Celltype_col",
+    sc_ref_slot         = "counts",
+    cores               = 2,
+    min_cells_per_type  = 25
 ) {
   ## Basic input validation to fail early with clear messages
   if (!inherits(sobj, "Seurat")) {
@@ -35,79 +37,81 @@ runRCTD_1_sample <- function(
       "' not found in sc_ref@meta.data. Check sc_ref_celltype_col."
     )
   }
-
+  if (!is.numeric(min_cells_per_type) || length(min_cells_per_type) != 1 || min_cells_per_type < 1) {
+    stop("min_cells_per_type must be a single numeric value >= 1.")
+  }
+  
   ## Create SpatialRNA object for RCTD query
-  ## Uses the selected assay and slot from the spatial Seurat object
   counts <- Seurat::GetAssayData(sobj, assay = assay, slot = slot)
-
-  ## Get spatial coordinates and restrict to x and y
   coords <- Seurat::GetTissueCoordinates(sobj)[, c("x", "y")]
-
-  ## Total UMI counts per spot needed by spacexr
-  nUMI <- Matrix::colSums(counts)
-
-  ## Construct spacexr SpatialRNA object
-  query <- spacexr::SpatialRNA(coords, counts, nUMI)
-
+  nUMI   <- Matrix::colSums(counts)
+  query  <- spacexr::SpatialRNA(coords, counts, nUMI)
+  
   ## Extract reference counts matrix from the reference Seurat object
   ref_counts <- Seurat::GetAssayData(sc_ref, slot = sc_ref_slot)
-
-  ## Fetch cell type labels from metadata using a stable Seurat API
-  ## FetchData returns a data frame with one column per requested variable
+  
+  ## Fetch cell type labels
   df <- Seurat::FetchData(sc_ref, vars = sc_ref_celltype_col)
   cell_types <- df[[1]]
-  names(cell_types) <- rownames(df)   # barcodes as names
-
-  ## Coerce to factor as expected by spacexr
+  names(cell_types) <- rownames(df)
   cell_types <- as.factor(cell_types)
-
-  ## Ensure that the cell type vector is aligned to the reference counts columns
-  ## This guarantees that each column in ref_counts has a label
+  
+  ## Ensure labels cover reference barcodes
   if (!all(colnames(ref_counts) %in% names(cell_types))) {
     stop(
       "Not all reference barcodes have a cell type label. ",
       "Check that sc_ref_celltype_col is complete and matches column names of ref_counts."
     )
   }
-
-  ## Reorder and subset cell_types to match ref_counts columns exactly
   cell_types <- cell_types[colnames(ref_counts)]
-
+  
+  ## Filter out rare cell types below threshold
+  ct_counts <- table(cell_types)
+  keep_types <- names(ct_counts)[ct_counts >= min_cells_per_type]
+  if (length(keep_types) < 1) {
+    stop(
+      "After filtering, no cell types remain with >= ", min_cells_per_type,
+      " cells. Lower min_cells_per_type or check sc_ref_celltype_col."
+    )
+  }
+  
+  keep_cells <- cell_types %in% keep_types
+  if (any(!keep_cells)) {
+    message(
+      "Filtering reference cell types: kept ", sum(keep_cells), " of ", length(keep_cells),
+      " cells across ", length(keep_types), " cell types (min ", min_cells_per_type, " cells per type)."
+    )
+  }
+  
+  ref_counts <- ref_counts[, keep_cells, drop = FALSE]
+  cell_types <- droplevels(cell_types[keep_cells])
+  
   ## Total UMI per reference cell
   nUMI_ref <- Matrix::colSums(ref_counts)
-
+  
   ## Construct spacexr Reference object
   reference <- spacexr::Reference(ref_counts, cell_types, nUMI_ref)
-
-  ## Run RCTD using spacexr
-  ## create.RCTD builds the model object, run.RCTD performs the deconvolution
+  
+  ## Run RCTD
   rctd      <- spacexr::create.RCTD(query, reference, max_cores = cores)
   rctd_full <- spacexr::run.RCTD(rctd, doublet_mode = "full")
-
-  ## Extract and normalize RCTD weights
-  ## weights is a cell type by spot matrix, normalize_weights converts to probabilities per spot
+  
+  ## Extract and normalize weights
   weights      <- rctd_full@results$weights
   norm_weights <- spacexr::normalize_weights(weights)
-
-  ## Add RCTD results as a new assay on the spatial Seurat object
-  ## Note the transpose so that rows become features (cell types) and columns spots
+  
+  ## Add as assay
   sobj[["rctd_full"]] <- Seurat::CreateAssayObject(
     data = t(as.matrix(norm_weights))
   )
-
-  ## Ensure the assay key is set to a consistent prefix for downstream usage
+  
   if (is.null(sobj@assays$rctd_full@key) || length(sobj@assays$rctd_full@key) == 0) {
     sobj@assays$rctd_full@key <- "rctd_full_"
   }
-
-  ## Add one metadata column per cell type to the spatial Seurat object
-  ## Column names will match the row names of norm_weights (cell types)
-  sobj <- Seurat::AddMetaData(
-    object   = sobj,
-    metadata = norm_weights
-  )
-
-  ## Return the enriched spatial Seurat object
+  
+  ## Add per cell type weights to metadata
+  sobj <- Seurat::AddMetaData(object = sobj, metadata = norm_weights)
+  
   return(sobj)
 }
 
