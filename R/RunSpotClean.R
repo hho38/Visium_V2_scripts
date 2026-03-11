@@ -76,7 +76,6 @@
 #' @importFrom spotclean read10xRawH5 read10xSlide createSlide spotclean visualizeHeatmap convertToSeurat
 #' @import Seurat
 
-
 load_and_SpotClean <- function(
   data_dir = "./spaceranger_data",
   visualize = TRUE,

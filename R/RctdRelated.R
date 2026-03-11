@@ -14,6 +14,7 @@ library(Matrix)
 #' @param min_cells_per_type   Minimum number of cells per celltype in reference. If lower, celltype won't be used. 
 #'
 #' @return Seurat object sobj with a new assay "rctd_full" and per cell type weights in meta.data
+
 runRCTD_1_sample <- function(
     sobj,
     sc_ref,
@@ -148,7 +149,7 @@ assignLabels <- function(object,
 
   ## write back to the object --------------------------------------------------
   object[[labels_col]] <- factor(labels, levels = celltype_cols)
-  Idents(object)      <- labels_col
+  Idents(object) <- labels_col
 
   return(object)
 }
