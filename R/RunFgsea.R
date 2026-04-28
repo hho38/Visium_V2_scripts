@@ -34,7 +34,7 @@
 #'   ties. Default is `0`, which leaves ranks unchanged apart from the initial
 #'   `1e-12` offset used in the function.
 #' @param nPermSimple Number of simple permutations used by [fgsea::fgsea()].
-#'   Increasing this can improve p-value estimation at the cost of runtime.
+#'   Increasing this can improve p-value estimation at the cost of runtime. Default is NA to call fgseaMultilevel.
 #' @param plot Logical; if `TRUE`, plots the ranked statistic distribution
 #'   before running FGSEA.
 #'
@@ -81,7 +81,7 @@ run_fgsea_from_de <- function(
   minSize = 10,
   maxSize = 500, 
   jitter = 0,
-  nPermSimple = 1000,
+  nPermSimple = NA,
   plot = FALSE
 ) {
   if (!is.data.frame(de)) stop("'de' must be a data.frame")
@@ -145,7 +145,22 @@ run_fgsea_from_de <- function(
   ranks <- df$rank
   
   # adds a tiny unique increment,or jitter, to every gene in the list. Ex 1e-12
-  ranks <- ranks + seq(1e-12, length.out = length(ranks), by = jitter)
+  #ranks <- ranks + seq(1e-12, length.out = length(ranks), by = jitter)
+  # Add a tiny deterministic offset only within tied rank groups.
+  # This breaks ties without changing ranks that are already unique.
+  if (jitter > 0) {
+    ranks <- ave(
+      ranks,
+      ranks,
+      FUN = function(x) {
+        if (length(x) == 1) {
+          x
+        } else {
+          x + seq(0, by = jitter, length.out = length(x))
+        }
+      }
+    )
+  }
   
   names(ranks) <- df$gene
 
@@ -156,13 +171,24 @@ run_fgsea_from_de <- function(
     plot(ranks)
   }
   
-  fgsea_res <- fgsea::fgsea(
-    pathways = pathways,
-    stats = ranks,
-    minSize = minSize,
-    maxSize = maxSize, 
-    nPermSimple = nPermSimple
-  )
+  if (!is.na(nPermSimple)){
+    #This will run fgseaSimple. Useful when pathways of interest have NA values
+    fgsea_res <- fgsea::fgsea(
+      pathways = pathways,
+      stats = ranks,
+      minSize = minSize,
+      maxSize = maxSize, 
+      nPermSimple = nPermSimple
+    )
+  }else{
+    #This will run the default modern fgseaMultilevel
+      fgsea_res <- fgsea::fgsea(
+      pathways = pathways,
+      stats = ranks,
+      minSize = minSize,
+      maxSize = maxSize,
+    )
+  }
 
   # Return results ordered by adjusted p-value, then by enrichment magnitude.
   fgsea_res[order(fgsea_res$padj, -abs(fgsea_res$NES)), ]
