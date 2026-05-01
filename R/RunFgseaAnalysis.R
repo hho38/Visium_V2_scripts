@@ -191,5 +191,11 @@ run_fgsea_from_de <- function(
   }
 
   # Return results ordered by adjusted p-value, then by enrichment magnitude.
-  fgsea_res[order(fgsea_res$padj, -abs(fgsea_res$NES)), ]
+  fgsea_res <- fgsea_res[order(fgsea_res$padj, -abs(fgsea_res$NES)), ]
+  
+  return(list(
+  fgsea_result = fgsea_res,
+  pathways = pathways,
+  ranks = ranks
+  ))
 }
