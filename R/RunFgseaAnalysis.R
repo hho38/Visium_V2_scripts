@@ -199,3 +199,30 @@ run_fgsea_from_de <- function(
   ranks = ranks
   ))
 }
+
+
+# Running Collapse Pathways on Method output
+# Assumes output of running run_fgsea_from_de is fgsea_output
+# We filter out pathways with padj value of less than 0.05
+
+collapsed_fgsea_df <- fgsea::collapsePathways(
+  fgseaRes = fgsea_output$fgsea_result[fgsea_output$fgsea_result$padj < 0.05,],
+  pathways = fgsea_output$pathways,
+  stats = fgsea_output$ranks
+)
+
+
+#Running ggplot to have dot plot of Top Enrichment Pathways
+# Assumes collapsed fgsea data is called collapsed_fgsea_df
+# Method will remove "_" and "HALLMARK" for cleaner pathway names
+
+ggplot(collapsed_fgsea_df, 
+       aes(x = NES, 
+           y = reorder(gsub("_", " ", gsub("^HALLMARK_", "", pathway)), NES))) +
+  geom_point(aes(size = size, color = padj)) +
+  scale_color_continuous(low = "blue", high = "red") +
+  theme_minimal() +
+  labs(title = "Top Enriched Pathways",
+       y = "Pathway",
+       x = "Normalized Enrichment Score")
+
