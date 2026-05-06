@@ -226,3 +226,29 @@ ggplot(collapsed_fgsea_df,
        y = "Pathway",
        x = "Normalized Enrichment Score")
 
+
+
+# Running fgsea plotEnrichment Method after run_fgsea_from_de
+# Assumes output of running run_fgsea_from_de is fgsea_output
+# 1. Extract the stats for this specific pathway from your results dataframe
+
+pathway_to_plot <- "HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION"
+stats_row <- fgsea_output$fgsea_result |> filter(pathway == pathway_to_plot)
+
+# 2. Create the plot and add the annotation
+fgsea::plotEnrichment(
+  pathway = fgsea_output$pathways[[pathway_to_plot]], 
+  stats = fgsea_output$ranks
+) + 
+  ggplot2::labs(title = "EPITHELIAL_MESENCHYMAL_TRANSITION") +
+  ggplot2::annotate(
+    "text", 
+    x = -Inf, y = -Inf,             # Positions text in the bottom-left corner
+    hjust = -0.2, vjust = -0.5,      # Adjusts alignment so it doesn't touch the edge
+    label = paste0(
+      "NES: ", round(stats_row$NES, 2), "\n",
+      "padj: ", formatC(stats_row$padj, format = "e", digits = 2)
+    ),
+    size = 5, fontface = "bold"
+  )
+
